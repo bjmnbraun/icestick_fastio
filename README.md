@@ -42,9 +42,11 @@ artists and creators with little programming experience to programming. In
 fact, we plan to model some of our demo programs off of processing's demos
 (such as rendering fire via an old-skool pixel effect.)
 
+The [openframeworks project](openframeworks.cc) is a translation of processing to the C/C++ language by the same development team. We plan to use openframeworks as an easy way to display images generated from the FPGA on the computer screen.
+
 ## Plan and timeline
 
-### Throughput expected
+### I/O throughput goal
 
 * Back of the envelope possible and ideal throughput
 
