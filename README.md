@@ -80,7 +80,7 @@ We plan to have this working for the March 7 presentation.
 * Ben will conduct metrics and make graphs on the throughput of the I/O system
 for both presentations.
 
-### Visual program based on interface
+### Visual program
 
 * Ben will write a simple template visual program that streams a generated
 image off of the FPGA and displays on the computer.
