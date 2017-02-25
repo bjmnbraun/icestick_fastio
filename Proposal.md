@@ -51,9 +51,7 @@ The first phase of this project is do some investigation on how the UART can be 
 Pat provides a UART that we plan to use as the starting point for our I/O
 stream. We plan to extend this UART to:
 
-* Use parallel pins. The icestick has XXX pins and these can be used to run a
-UART in parallel. Understanding how to do this requires studing the FTDI
-interface and the UART code. Ben and Nate will both look into whether this is
+* Use parallel pins. The icestick has 11 pins that can be communicated with through the FTDI driver (13 if you count two "control" pins) and these can be used to run, potentially, 11 streams in parallel. Understanding how to do this requires studing the FTDI driver. Ben and Nate will both look into whether this is
 possible.
 
 * Overclock the FPGA / UART. The throughput of the UART can be increased by increasing
