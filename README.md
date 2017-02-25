@@ -2,22 +2,18 @@
 
 * Team Members: Benjamin Braun, Nate Chizgi
 
-### Goal of the project
+### Goal
 
-* Make more specific, offering streaming interface to FPGA
+The goal of this project is to provide a good solution for streaming data on and off of the FPGA. 
 
-To turn the icestick into a platform for writing visual programs. The icestick
-is a cheap and easy-to-obtain piece of hardware, and our goal is to lower the
-barrier of entry to programming small, but satisfying, programs on the device.
-Our hope is to allow those without a programming background to experiment
-creatively with the capabilities of a small FPGA.
+While this has many applications, the simplest effect is to generate some graphical stream of images on the FPGA and display them on the computer screen. We will implement such a viewer as well. The idea would be that someone, possibly having little to no programming knowledge, could pick up an Icestick from the store, and using our streaming framework, program a simple piece of art rendered on the FPGA and displayed on their computer in real time.
 
 ### Deliverables
 
 A fast, bidirectional, streaming interface to the icestick FPGA.
 
-A simple platform for programming visual programs on the icestick, and multiple
-interesting visuals generated on the icestick but shown real-time on the computer screen.
+A simple viewer for programs on the icestick that shows the output on the computer screen. Multiple
+example visuals generated on the icestick but shown real-time on the computer screen.
 
 ### Challenges
 
@@ -31,11 +27,11 @@ implement a high-throughput I/O solution for the off-the-shelf icestick.
 
 ### Previous work in this area
 
-* UART RX example given in class.
+Pat gives us a UART that streams the string "Hello world" many times a second from the FPGA. We will build on this.
 
-* Ross demonstrated real time edge detection in class.
+Ross demonstrated real time edge detection on an FPGA in class. This is inspiring for sure, however the icestick is a more modest FPGA so our visual programs may be a bit more simple.
 
-* Streaming I/O available through SRAM on icestick with some modification to the device.
+The iceprog documentation differentiates between programming the on-board CRAM or the Flash. It's not clear how relevent this is to our project, since either way the device might need to be stopped to accept a new configuration. We will look into possibly hacking iceprog as an alternative approach.
 
 The [processing project](www.processing.org) has been successful at attracting
 artists and creators with little programming experience to programming. In
@@ -52,10 +48,8 @@ The [openframeworks project](openframeworks.cc) is a translation of processing t
 
 ### Optimizing Pat's UART
 
-* Pat provides a UART that we plan to use as the starting point for our I/O
-stream.
-
-We plan to extend this UART to
+Pat provides a UART that we plan to use as the starting point for our I/O
+stream. We plan to extend this UART to:
 
 * Use parallel pins. The icestick has XXX pins and these can be used to run a
 UART in parallel. Understanding how to do this requires studing the FTDI
