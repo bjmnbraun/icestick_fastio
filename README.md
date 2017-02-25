@@ -42,9 +42,9 @@ The [openframeworks project](openframeworks.cc) is a translation of processing t
 
 ## Plan and timeline
 
-### I/O throughput goal
+### Investigation
 
-* Back of the envelope possible and ideal throughput
+The first phase of this project is do some investigation on how the UART can be turned into a fast streaming interface. Currently, the UART sends text data and is read on Linux via the FTDI driver and a tty. The tty max baud rate appears to be ~115200. At this rate, we could only send 14KB/s, or 3600 pix/s, which would only allow for a 60x60 image... once a second. Of course, it is not clear whether the tty limit is a limit of the FTDI driver, in which case we could read directly from that at its max speed. This is the first thing we will investigate, hopefully with a resolution within the first week of work (finish during week of March 4.)
 
 ### Optimizing Pat's UART
 
@@ -56,8 +56,8 @@ UART in parallel. Understanding how to do this requires studing the FTDI
 interface and the UART code. Ben and Nate will both look into whether this is
 possible.
 
-* Overclock the FPGA. The throughput of the UART can be increased by increasing
-the clock-rate of the FPGA. Ben will look into this.
+* Overclock the FPGA / UART. The throughput of the UART can be increased by increasing
+the baud-rate of the UART, and possibly even the clock-rate of the FPGA. Ben will look into this. 
 
 We plan to have one of the above items working for the March 7 presentation.
 A version with higher throughput will be presented March 21.
