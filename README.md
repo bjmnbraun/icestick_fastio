@@ -19,7 +19,7 @@ example visuals generated on the icestick but shown real-time on the computer sc
 
 The icestorm pipeline comes equipped to flash a static program to the device,
 but offers few capabilities for streaming I/O while a program is running. Since
-we need to stream large images off of (and possibly back on to) to the FPGA many times
+we need to stream large images off of (and possibly back on to) the FPGA many times
 a second, we need to overcome the limited I/O capabilities of the icestick.
 
 Other FPGAs may come with special I/O capabilities. Our goal is to specifically
