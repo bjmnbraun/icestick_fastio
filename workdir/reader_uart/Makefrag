@@ -1,0 +1,5 @@
+SRC_PYFILES := \
+        baud.py \
+        fsm.py \
+        ftdi.py \
+        uart.py
