@@ -286,10 +286,6 @@ static int readCallback(
         FTDIProgressInfo *progress,
         void *userdata
 ) {
-        if (CONFIG_DUMP_READ){
-                printf("Read %d\n", length);
-        }
-
         if (exitRequested){
                 goto out;
         }
@@ -308,30 +304,312 @@ static int readCallback(
                 CONFIG_DUMP_READ = false;
         }
         if (progress){
-                //Yuck... readCallback() with progress non-null is only called
-                //on the main driver thread, i.e. we can do synchronous
-                //operations here since it's not actually called by libusb.
-                //
-                //We need to set this after the async transfers set up in
-                //readstream are set up, so this is a hackish way to do that.
-                //(otherwise the FPGA will start writing before the async
-                //transfers are set up, and the buffers may overflow causing us
-                //to lose some of the first buffer - and hence an unclean print
-                //out)
-                //
-                //Really we need to do our own ftdi_readstream.
-                if (ftdi_setrts(&ftdic,1))
-                {
-                        printf("setflowctrl error\n");
-                        error();
-                }
-
                 printf("Rate %7.3f\n", progress->currentRate / (1024.0*1024.0));
         }
 
 out:
         return exitRequested ? 1 : 0;
 }
+
+
+
+#include <libusb.h>
+
+typedef struct
+{
+    FTDIStreamCallback *callback;
+    void *userdata;
+    int packetsize;
+    int result;
+    bool done;
+    FTDIProgressInfo progress;
+} FTDIStreamState;
+
+/* Handle callbacks
+ *
+ * With Exit request, free memory and release the transfer
+ *
+ * state->result is only set when some error happens
+ */
+static void LIBUSB_CALL
+ftdi_readstream_cb(struct libusb_transfer *transfer)
+{
+    FTDIStreamState *state = transfer->user_data;
+    int packet_size = state->packetsize;
+
+    if (transfer->status == LIBUSB_TRANSFER_COMPLETED)
+    {
+        int i;
+        uint8_t *ptr = transfer->buffer;
+        int length = transfer->actual_length;
+        int res = 0;
+
+        if (length == 2){
+                printf("zero length transaction\n");
+                goto done;
+        }
+
+        if (length != transfer->length){
+                printf("Incomplete transaction (%d)\n", length);
+                goto done;
+        }
+
+#if 1
+        //ftdi puts two bytes of modem status at the start of each packet
+
+        if (ptr[2] != 'H'){
+                printf("Bad buffer start: %d\n", length);
+        }
+
+
+        int numPackets = (length + packet_size - 1) / packet_size;
+
+        for (i = 0; i < numPackets; i++)
+        {
+            int payloadLen;
+            int packetLen = length;
+
+            if (packetLen > packet_size)
+                packetLen = packet_size;
+
+            payloadLen = packetLen - 2;
+            //The modem status bytes are basically useless
+            //printf("%02x %02x\n", ptr[0], ptr[1]);
+            state->progress.current.totalBytes += payloadLen;
+
+            res = state->callback(ptr + 2, payloadLen,
+                                  NULL, state->userdata);
+
+            ptr += packetLen;
+            length -= packetLen;
+        }
+        /*
+        if (ptr[-1] != 'H' || ptr[-2] == 'H'){
+                printf("Bad transaction end %d\n", length);
+        }
+        */
+        //printf("Total length: %lu\n", state->progress.current.totalBytes);
+#else
+        int res = state->callback(ptr, length, NULL, state->userdata);
+#endif
+
+done:
+        if (res)
+        {
+                //Yuck shouldn't clean up here
+            state->result = res;
+            free(transfer->buffer);
+            libusb_free_transfer(transfer);
+        }
+        else
+        {
+#if 1
+            state->done = true;
+            state->result = 0;
+#else
+            transfer->status = -1;
+            state->result = libusb_submit_transfer(transfer);
+#endif
+        }
+    } else {
+        fprintf(stderr, "unknown status %d\n",transfer->status);
+        state->result = LIBUSB_ERROR_IO;
+    }
+}
+
+/**
+   Helper function to calculate (unix) time differences
+
+   \param a timeval
+   \param b timeval
+*/
+static double
+TimevalDiff(const struct timeval *a, const struct timeval *b)
+{
+    return (a->tv_sec - b->tv_sec) + 1e-6 * (a->tv_usec - b->tv_usec);
+}
+
+int my_ftdi_readstream(struct ftdi_context *ftdi, FTDIStreamCallback *callback)
+{
+        FTDIStreamState state = { callback, NULL, ftdi->max_packet_size, 0,
+false};
+        //HACKS!!!
+        //
+        //Buffer must be a multiple of packet size
+        //
+        //Buffersize should be exactly the message size the FPGA program wants
+        //to send. Buffersize also cannot be too large, since we need the FTDI
+        //chip to respond to the buffer in a single transfer (and it seems to
+        //be breaking into multiple transfers for large buffersizes.)
+        //
+        //While USB is a reliable transport protocol, the FTDI chip will
+        //silently overwrite buffers if we allow too much to accumulate on the
+        //chip's buffers. So, we use an accounting scheme where we tell the
+        //FPGA after we have submitted a read request. The FPGA will use this
+        //information to never run too far ahead of the stream of read
+        //requests.
+        //
+        // (in the current implementation, the FPGA will at most work one
+        // buffer ahead of the read stream)
+        //
+        //We read exactly this much information from the FPGA each time.
+        //Though, due to the FTDI's modem bytes we actually write
+        //(ftdi->max_packet_size - 2)*N bytes from the FPGA's UART
+        //
+        //the *8 here must match exactly the output chunk size output by the
+        //FPGA program.
+        int bufferSize = ftdi->max_packet_size * 8;
+        int xferIndex;
+        int err = 0;
+
+        /* Only FT2232H and FT232H know about the synchronous FIFO Mode*/
+        if ((ftdi->type != TYPE_2232H) && (ftdi->type != TYPE_232H))
+        {
+                fprintf(stderr,"Device doesn't support synchronous FIFO mode\n");
+                return 1;
+        }
+
+        /* We don't know in what state we are, switch to reset*/
+        if (ftdi_set_bitmode(ftdi,  0xff, BITMODE_RESET) < 0)
+        {
+                fprintf(stderr,"Can't reset mode\n");
+                return 1;
+        }
+
+        if (ftdi_setrts(&ftdic,0))
+        {
+                printf("setflowctrl error\n");
+                error();
+        }
+        //We should only need to stall here for one clock tick of the FPGA,
+        //which is 1/12MHz. Probably unecessary but may as well be safe:
+        usleep(1);
+
+        /* Purge anything remaining in the buffers*/
+        if (ftdi_usb_purge_buffers(ftdi) < 0)
+        {
+                fprintf(stderr,"Can't Purge\n");
+                return 1;
+        }
+
+        //Clear reset
+        if (ftdi_setrts(&ftdic,1))
+        {
+                printf("setflowctrl error\n");
+                error();
+        }
+
+        //At this point, the FPGA is generating the first buffer. That's OK, it
+        //can sit in the FTDI's buffers until we request it.
+
+        /*
+         * Set up the transfer
+         */
+        struct libusb_transfer *transfer;
+        transfer = libusb_alloc_transfer(0);
+        if (!transfer)
+        {
+                fprintf(stderr, "No libusb_alloc_transfer\n");
+                err = LIBUSB_ERROR_NO_MEM;
+                goto cleanup;
+        }
+
+        void* buffer = malloc(bufferSize);
+        if (!buffer){
+                fprintf(stderr, "No buffer\n");
+                err = LIBUSB_ERROR_NO_MEM;
+                goto cleanup;
+        }
+
+        libusb_fill_bulk_transfer(transfer, ftdi->usb_dev, ftdi->out_ep,
+                        malloc(bufferSize), bufferSize,
+                        ftdi_readstream_cb,
+                        &state, 0);
+
+
+        gettimeofday(&state.progress.first.time, NULL);
+        //Copy first to prev
+        state.progress.prev = state.progress.first;
+
+        if (ftdi_setdtr(&ftdic,1))
+        {
+                printf("setflowctrl error\n");
+                error();
+        }
+
+again:
+        state.done = false;
+        transfer->status = -1;
+        err = libusb_submit_transfer(transfer);
+        if (err) {
+                fprintf(stderr, "Can't submit\n");
+                goto cleanup;
+        }
+
+        //Tell the current FPGA that we have receive capacity for the current buffer
+        //and one more, so it can move on to the next
+        if (ftdi_setdtr(&ftdic,0))
+        {
+                printf("setflowctrl error\n");
+                error();
+        }
+        if (ftdi_setdtr(&ftdic,1))
+        {
+                printf("setflowctrl error\n");
+                error();
+        }
+
+        //TODO if we time out or otherwise error below, re-reset the device
+        //with the reset bit and flushing the FTDI buffers
+        do
+        {
+                FTDIProgressInfo  *progress = &state.progress;
+                const double progressInterval = 1.0;
+                struct timeval timeout = { 0, ftdi->usb_read_timeout };
+                struct timeval now;
+
+                int err = libusb_handle_events_timeout(ftdi->usb_ctx,
+&timeout);
+                if (err){
+                        printf("Error in handle_events_timeout");
+                        goto cleanup;
+                }
+
+                // If enough time has elapsed, update the progress
+                gettimeofday(&now, NULL);
+                double timeSincePrev = TimevalDiff(&now, &progress->prev.time);
+                if (timeSincePrev >= progressInterval)
+                {
+                        progress->current.time = now;
+                        progress->totalTime =
+TimevalDiff(&progress->current.time,
+                                        &progress->first.time);
+
+                        progress->totalRate =
+                                progress->current.totalBytes
+/progress->totalTime;
+
+                        progress->currentRate =
+                                (progress->current.totalBytes -
+                                 progress->prev.totalBytes) / timeSincePrev;
+
+                        state.callback(NULL, 0, progress, state.userdata);
+                        progress->prev = progress->current;
+                }
+        } while (!state.result && !state.done);
+
+        if (state.result == 0){
+                goto again;
+        }
+
+cleanup:
+        //TODO proper cleanup
+        if (err)
+                return err;
+        else
+                return state.result;
+}
+
 
 int main(int argc, char **argv)
 {
@@ -470,10 +748,20 @@ int main(int argc, char **argv)
         //Hmm...the 8 packets per transfer is definitely a performance
         //optimization. But the 8 transfers in parallel leads to out-of-order
         //packet delivery... Look into!
+        if (my_ftdi_readstream(&ftdic, readCallback)){
+                fprintf(stderr, "Read error\n");
+                error();
+        }
+
+#if 0
+        //Hmm...the 8 packets per transfer is definitely a performance
+        //optimization. But the 8 transfers in parallel leads to out-of-order
+        //packet delivery... Look into!
         if (ftdi_readstream(&ftdic, readCallback, NULL, 8, 8) <= 0){
                 fprintf(stderr, "Read error\n");
                 error();
         }
+#endif
 
 #if 0
 	ftdi_disable_bitbang(&ftdic);
