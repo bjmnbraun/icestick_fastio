@@ -34,9 +34,10 @@ upload: all
 	pushd build && make upload
 
 clean:
-	pushd build && rm -f *.pcf *.v
-	pushd build && make clean
+	rm -f *.pyc
 	rm -rf __pycache__
+	pushd build && rm -f *.pcf *.v *.pyc
+	pushd build && make clean
 
 .DEFAULT_GOAL := all
 .PHONY: all clean upload

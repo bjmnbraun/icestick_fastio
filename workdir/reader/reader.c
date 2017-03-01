@@ -286,16 +286,15 @@ static int readCallback(
         FTDIProgressInfo *progress,
         void *userdata
 ) {
-
         if (CONFIG_DUMP_READ){
-                printf("Read %d", length);
+                printf("Read %d\n", length);
         }
 
         if (exitRequested){
                 goto out;
         }
 
-        if(length >= 0 && CONFIG_DUMP_READ){
+        if(length > 0 && CONFIG_DUMP_READ){
                 size_t i = 0;
                 for(i = 0; i < length; i++){
                         char c = buffer[i];
@@ -303,12 +302,31 @@ static int readCallback(
                                 printf("%c",c);
                         }
                 }
-        }
-        //XXX
-        CONFIG_DUMP_READ = false;
-        if (progress){
                 printf("\n");
-                printf("Rate %7.3f", progress->currentRate / (1024.0*1024.0));
+
+                //XXX
+                CONFIG_DUMP_READ = false;
+        }
+        if (progress){
+                //Yuck... readCallback() with progress non-null is only called
+                //on the main driver thread, i.e. we can do synchronous
+                //operations here since it's not actually called by libusb.
+                //
+                //We need to set this after the async transfers set up in
+                //readstream are set up, so this is a hackish way to do that.
+                //(otherwise the FPGA will start writing before the async
+                //transfers are set up, and the buffers may overflow causing us
+                //to lose some of the first buffer - and hence an unclean print
+                //out)
+                //
+                //Really we need to do our own ftdi_readstream.
+                if (ftdi_setrts(&ftdic,1))
+                {
+                        printf("setflowctrl error\n");
+                        error();
+                }
+
+                printf("Rate %7.3f\n", progress->currentRate / (1024.0*1024.0));
         }
 
 out:
@@ -361,6 +379,17 @@ int main(int argc, char **argv)
 
 	ftdic_open = true;
 
+        if (ftdi_setflowctrl(&ftdic,SIO_DISABLE_FLOW_CTRL))
+        {
+                printf("setflowctrl error\n");
+                error();
+        }
+        if (ftdi_setrts(&ftdic,0))
+        {
+                printf("setflowctrl error\n");
+                error();
+        }
+
 	if (ftdi_usb_reset(&ftdic)) {
 		fprintf(stderr, "Failed to reset iCE FTDI USB device.\n");
 		error();
@@ -375,23 +404,6 @@ int main(int argc, char **argv)
         if(ftdi_set_baudrate(&ftdic, 12000000))
         {
                 printf("baudrate incorrect\n");
-                error();
-        }
-
-        if (ftdi_setflowctrl(&ftdic,SIO_DISABLE_FLOW_CTRL))
-        {
-                printf("setflowctrl error\n");
-                error();
-        }
-        if (ftdi_setrts(&ftdic,0))
-        {
-                printf("setflowctrl error\n");
-                error();
-        }
-        usleep(100);
-        if (ftdi_setrts(&ftdic,1))
-        {
-                printf("setflowctrl error\n");
                 error();
         }
 

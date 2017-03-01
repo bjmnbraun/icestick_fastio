@@ -1,0 +1,3 @@
+This should implement a makefile or a standalone program that accepts an iospec
+file that might contain "display" lines and generates a window displaying the
+FPGA's pixels on the computer.

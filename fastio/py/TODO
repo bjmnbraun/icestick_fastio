@@ -1,0 +1,27 @@
+This directory should contain some python module that, when used alongside
+generating an FPGA layout, will:
+  - emit additional circuitry needed to implement some desired I/O on the
+    FPGA
+  - emit a file ".iospec" which can be used to build and/or run an I/O program
+    on the CPU that interfaces with the FPGA and does something
+
+For example, a call to something like
+
+  - fastio_display(width, height, framerate, details)
+
+  where details is optional and provides fields such as
+    - pixel format (RGB8, RGB4, RGBA8, etc.)
+    - etc.
+    (these should all have some reasonable defaults)
+
+  The call will generate a circuit that talks to some UART. The circuit has some inputs
+  that need to be wired up to other FPGA components to provide the actual
+  pixels that are then displayed.
+
+  It also outputs an iospec
+  file conaining a single line:
+
+  display 640 480 <fields in details> <some port information>
+
+  the iospec can be passed to the io_display program to build and /or run a
+  program that will display the data produced on the FPGA.

@@ -1,3 +1,6 @@
 *.pyc
 *.deps
 *.swp
+*.bin
+*.txt
+*.blif

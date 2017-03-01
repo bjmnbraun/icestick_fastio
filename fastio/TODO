@@ -1,0 +1,6 @@
+py folder contains python files used while generating the FPGA. Python is used
+so we can interface with magma.
+
+ios contains various IO programs that read an iospec file output by the python
+code and are intended to be run alongside the FPGA, to interface with it. Most
+ios are written in C / C++, though they can technically be in any language.

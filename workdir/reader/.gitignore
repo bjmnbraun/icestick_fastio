@@ -2,3 +2,4 @@ reader
 *.exe
 *.o
 *.d
+*.swp

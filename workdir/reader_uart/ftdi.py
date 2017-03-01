@@ -27,7 +27,7 @@ init = [array(*int2seq(ord(c), 8)) for c in 'Hello, world!  \n']
 
 logn = 4
 
-printf = Counter(logn, ce=True)
+printf = Counter(logn, ce=True, r=True)
 rom = ROM(logn, init, printf.O)
 
 data = array(rom.O[7], rom.O[6], rom.O[5], rom.O[4],
@@ -62,16 +62,26 @@ run_n(done, valid, run)
 run(run_n)
 wire(baud, run.CE)
 
-reset = LUT3((I0&~I1)|I2)(done, run, main.RTS)
+reset = LUT2((I0&~I1))(done, run)
 count(CE=baud, RESET=reset)
 
+#We are abusing RTS as a kind of reset signal. When it is set, reset to the
+#first character of the printf and don't output any bytes until it becomes
+#unset. This has no relation to the usual use of RTS in UARTs.
+
+#Load of the shift register is what actually causes the current character of printf
+#to be written out over the next few cycles and lead to interrupts
+#
+#valid / run will continue to tick even with main.RTS set, but we won't start
+#the shift register.
 shift = PISO(9, ce=True)
-load = LUT2(I0&~I1)(valid,run)
+load = LUT3(I0&~I1&~I2)(valid,run,main.RTS)
 shift(1,data,load)
 wire(baud, shift.CE)
 
+#Ready is what causes us to advance the printf to the next character
 ready = LUT2(~I0 & I1)(run, baud)
-wire(ready, printf.CE)
+printf(CE=ready, RESET=main.RTS)
 
 wire(shift, main.TX)
 
