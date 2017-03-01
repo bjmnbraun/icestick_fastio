@@ -467,7 +467,10 @@ int main(int argc, char **argv)
         }
 #endif
 
-        if (ftdi_readstream(&ftdic, readCallback, NULL, 8, 256) <= 0){
+        //Hmm...the 8 packets per transfer is definitely a performance
+        //optimization. But the 8 transfers in parallel leads to out-of-order
+        //packet delivery... Look into!
+        if (ftdi_readstream(&ftdic, readCallback, NULL, 8, 8) <= 0){
                 fprintf(stderr, "Read error\n");
                 error();
         }
