@@ -344,16 +344,10 @@ ftdi_readstream_cb(struct libusb_transfer *transfer)
         int length = transfer->actual_length;
         int res = 0;
 
-        if (length == 2){
+        if (length <= 2){
                 printf("zero length transaction\n");
                 goto done;
         }
-
-        if (length != transfer->length){
-                printf("Incomplete transaction (%d)\n", length);
-                goto done;
-        }
-
 #if 1
         //ftdi puts two bytes of modem status at the start of each packet
 
@@ -383,6 +377,11 @@ ftdi_readstream_cb(struct libusb_transfer *transfer)
             ptr += packetLen;
             length -= packetLen;
         }
+
+        if (transfer->actual_length != transfer->length){
+                printf("Incomplete transaction (%d)\n", transfer->actual_length);
+        }
+
         /*
         if (ptr[-1] != 'H' || ptr[-2] == 'H'){
                 printf("Bad transaction end %d\n", length);
@@ -682,6 +681,13 @@ int main(int argc, char **argv)
         if(ftdi_set_baudrate(&ftdic, 12000000))
         {
                 printf("baudrate incorrect\n");
+                error();
+        }
+
+        //The default latency on the FTDIC is 1 ms, which is usually not enough.
+        //Let's go higher:
+        if (ftdi_set_latency_timer(&ftdic, 16)){
+                printf("Couldn't set latency timer to 16ms\n");
                 error();
         }
 
