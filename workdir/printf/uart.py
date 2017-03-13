@@ -13,7 +13,7 @@ def DefineUART (n, init=0, ce=False, r=False, s=False):
     """Inputs:  data : BIT, done : BIT, valid : BIT"""
     """Outputs: TX : BIT, run : BIT, ready : BIT"""
     name = _RegisterName('UART', n, init, ce, r, s)
-    IO = ["data", In(Bit), "data_done", In(Bit), "valid", In(Bit), "TX", Out(Bit), "busy", Out(Bit), "ready", Out(Bit)] + ClockInterface(ce,r,s)
+    IO = ["data", In(Array(8,Bit)), "valid", In(Bit), "TX", Out(Bit), "ready", Out(Bit)] + ClockInterface(ce,r,s)
 
     @classmethod
     def definition(uart):
@@ -21,19 +21,20 @@ def DefineUART (n, init=0, ce=False, r=False, s=False):
       baud = 1
       logn = 4
 
-      # Transmit 16 bits per UART packet
+      # Latch data in at start of each packet and insert head bit (0)
+      data_in = Register(9, ce=True)
+      
+      # Latch valid in at start of each packet
+      valid_in = DFF(ce=True)
+      
+      # Cycle through UART packet
       count    = Counter(logn, ce=True, r=True)
       done     = Decode(15, logn)(count)
-      # Transmit [0, next 8 data input, 1, 1, 1, 1, 1, 1, 1] and then repeat
-      # Tack on 1 bit head and 7 bit tail
-      # disable ready out during head and tail bit to stall data_in
-      head_bit = EQ(4)(count, array(0,0,0,0)) # BIT 0 is head bit
-      tail_bit = UGT(4)(count, array(0,0,0,1)) # BIT 9,10,11,12,13,14,15 are tail bit
 
       # After 16-bit UART, transition run from 1->0 for 1 cycle and then start next block
       run   = DFF(ce=True)
       run_n = LUT3([0,0,1,0, 1,0,1,0])
-      run_n(done, uart.valid, run)
+      run_n(done, valid_in, run)
       run(run_n)
       wire(baud, run.CE)
 
@@ -41,19 +42,26 @@ def DefineUART (n, init=0, ce=False, r=False, s=False):
       reset = LUT2((I0&~I1))(done, run)
       count(CE=baud, RESET=reset)
 
-      # Busy if either uart 16-bit state machine is running OR data is not yet done
-      busy  = LUT2(I0 | ~I1)(run, uart.data_done)
-      wire(busy, uart.busy)
-
-      # Ready to receive new data if uart 16-bit FSM is running && (!head bit && !tail bit)
-      ready = LUT3(I0 & ~I1 & ~I2)(run,head_bit,tail_bit)
+      # Shift out the 16-bit packet
+      shift = PISO(9, ce=True)
+      load  = LUT2(I0&~I1)(valid_in,run)
+      shift(1,data_in,load)
+      wire(baud, shift.CE)
+      
+      # Wire shift output to TX
+      wire(shift, uart.TX)
+      
+      # Ready is set when UART packet finishes: allow new inputs and data latch
+      ready = LUT2(~I0 & I1)(run, baud)
       wire(ready, uart.ready)
-
-      # For now just pipe input data to output data
-      # if head_bit -> pipe 0 out ; tail_bit -> pipe 1 out ; else data out
-      mux4 = Mux4()
-      mux4(array(uart.data,0,1,1),array(head_bit,tail_bit))
-      wire(mux4.O, uart.TX)
+      
+      # Only allow new data latch when ready is set
+      valid_in(CE=ready)
+      wire(uart.valid,valid_in.I)
+      data_in(CE=ready)
+      wire(array(uart.data[7], uart.data[6], uart.data[5], uart.data[4],
+                 uart.data[3], uart.data[2], uart.data[1], uart.data[0], 0 ), data_in)
+            
   return _UART
 
 def UART(n, init=0, ce=False, r=False, s=False, **kwargs):

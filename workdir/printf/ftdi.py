@@ -26,32 +26,24 @@ valid = 1
 
 init = [array(*int2seq(ord(c), 8)) for c in 'Hello, world!  \n']
 
-logn_data = 4
-logn_char = 3
+logn = 4
 
-printf = Counter(logn_data, ce=True, r=True)
-rom    = ROM(logn_data, init, printf.O)
-count  = Counter(logn_char, ce=True, r=True)
-count(RESET=main.RTS)
-mux8   = Mux8()
-mux8(rom.O,count)
-
-#Ready is what causes us to advance the printf to the next character
-printf(CE=count.COUT, RESET=main.RTS)
+# print over length of message == 16
+printf = Counter(logn, ce=True, r=True)
+# index into ROM from printf counter
+rom    = ROM(logn, init, printf.O)
 
 #baud always on = max clock rate
 baud = 1
-data_done = 0
 
 # Get uart connection and feed in data
 uart = UART(1,0)
 uart();
-wire(mux8.O,uart.data)
-wire(data_done,uart.data_done)
+wire(rom.O,uart.data)
 wire(main.RTS,uart.valid)
 
-# Only feed in data when uart is ready to accept data
-wire(uart.ready, count.CE)
+#Ready is what causes us to advance the printf to the next character
+printf(CE=uart.ready, RESET=main.RTS)
 
 wire(uart.TX, main.TX)
 
