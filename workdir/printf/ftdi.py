@@ -2,7 +2,9 @@ import sys
 from magma import *
 from mantle import *
 from rom import ROM
+from rom import REGs
 from uart import UART
+from printf import IOPrintf
 from boards.icestick import IceStick
 
 icestick = IceStick()
@@ -23,27 +25,33 @@ icestick.D5.on()
 main = icestick.main()
 
 valid = 1
+length = array(1,1)
 
-init = [array(*int2seq(ord(c), 8)) for c in 'Hello, world!  \n']
+# For now print out full statement
+init = [array(*int2seq(ord(c), 8)) for c in 'a  \n']
 
-logn = 4
-
-# print over length of message == 16
-printf = Counter(logn, ce=True, r=True)
-# index into ROM from printf counter
-rom    = ROM(logn, init, printf.O)
-
-#baud always on = max clock rate
-baud = 1
-
-# Get uart connection and feed in data
+# Get uart connection
 uart = UART(1,0)
 uart();
-wire(rom.O,uart.data)
-wire(main.RTS,uart.valid)
 
-#Ready is what causes us to advance the printf to the next character
-printf(CE=uart.ready, RESET=main.RTS)
+# Get printf statement
+printf = IOPrintf(1, ce=False, r=True)
+printf(RESET=main.RTS)
+
+# Just wire up 4 characters to 4 arguments for now
+wire(init[0], printf.data0[0])
+wire(init[1], printf.data0[1])
+wire(init[2], printf.data0[2])
+wire(init[3], printf.data0[3])
+wire(length, printf.length[0])
+
+# Set valid always for now (this is user defined circuit)
+wire(valid,  printf.valid[0])
+
+# Hook printf up to uart connection type
+wire(printf.valid_out, uart.valid)
+wire(printf.data_out,  uart.data)
+wire(uart.ready,  printf.ready)
 
 wire(uart.TX, main.TX)
 

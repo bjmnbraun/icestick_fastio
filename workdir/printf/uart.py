@@ -10,7 +10,7 @@ def DefineUART (n, init=0, ce=False, r=False, s=False):
   
   class _UART(Circuit):
     """Construct a UART connection"""
-    """Inputs:  data : BIT, done : BIT, valid : BIT"""
+    """Inputs:  data : BIT, valid : BIT"""
     """Outputs: TX : BIT, run : BIT, ready : BIT"""
     name = _RegisterName('UART', n, init, ce, r, s)
     IO = ["data", In(Array(8,Bit)), "valid", In(Bit), "TX", Out(Bit), "ready", Out(Bit)] + ClockInterface(ce,r,s)
