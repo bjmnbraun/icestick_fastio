@@ -26,7 +26,6 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
     
     IO =  ["valid", In(Array(n,Bit))]
     IO += ["length0", In(Array(logn_max_len,Bit))]
-    #IO += ["data0", In(Array(1<<logn_max_len,Array(8,Bit)))]
     IO += ["data0_arg0", In(Array(8,Bit)), "data0_arg1", In(Array(8,Bit)), "data0_arg2", In(Array(8,Bit)), "data0_arg3", In(Array(8,Bit))]
     if n > 1:
       IO += ["data1", In(Array(1<<logn_max_len,Array(8,Bit)))]
@@ -114,7 +113,7 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
         any_valid = OrN(2)
         wire(valid_latch.O[0], any_valid.I[0])
         wire(valid_latch.O[0], any_valid.I[1])
-        wire(arg_latch0.O, printf.data_out)
+        wire(data_mux.O, printf.data_out)
         
       # Wire 0 or selected length to done comparitor based on any_valid
       done_mux = Mux(2,logn_max_len)
@@ -123,16 +122,17 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
       wire(any_valid.O, done_mux.S)
       
       # Counter runs when ~done && UART is ready for data
-      done_logic = NE(logn_max_len)
+      done_logic = EQ(logn_max_len)
+      not_done   = LUT1(~I0)(done_logic)
       done_logic(print_cnt.O,done_mux.O)
       busy = OrN(2)
-      wire(done_logic.O, busy.I[0])
+      wire(not_done.O, busy.I[0])
       wire(any_valid.O, busy.I[1])
       wire(busy.O,printf.valid_out)
       
       # Stall and reset counter based in inputs
       ready = LUT2(I0&I1)
-      ready(printf.ready, done_logic.O)
+      ready(printf.ready, not_done.O)
       wire(ready, print_cnt.CE)
       
       # Start circuit - detect any_valid && done transition
