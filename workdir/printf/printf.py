@@ -113,7 +113,7 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
         any_valid = OrN(2)
         wire(valid_latch.O[0], any_valid.I[0])
         wire(valid_latch.O[0], any_valid.I[1])
-        wire(data_mux.O, printf.data_out)
+        wire(arg_latch0, printf.data_out)
         
       # Wire 0 or selected length to done comparitor based on any_valid
       done_mux = Mux(2,logn_max_len)
@@ -123,7 +123,8 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
       
       # Counter runs when ~done && UART is ready for data
       done_logic = EQ(logn_max_len)
-      not_done   = LUT1(~I0)(done_logic)
+      not_done   = LUT1(~I0)
+      not_done(done_logic)
       done_logic(print_cnt.O,done_mux.O)
       busy = OrN(2)
       wire(not_done.O, busy.I[0])
@@ -131,8 +132,9 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
       wire(busy.O,printf.valid_out)
       
       # Stall and reset counter based in inputs
-      ready = LUT2(I0&I1)
-      ready(printf.ready, not_done.O)
+      start = AndN(2)
+      ready = LUT3((I0&I1)|I2)
+      ready(printf.ready, not_done.O, start.O)
       wire(ready, print_cnt.CE)
       
       # Start circuit - detect any_valid && done transition
@@ -142,7 +144,6 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
       new_dff(new_data)
       new_data_inv = LUT1(~I0)
       new_data_inv(new_data)
-      start = AndN(2)
       wire(new_data_inv.O, start.I[0])
       wire(new_dff.O, start.I[1])
 
