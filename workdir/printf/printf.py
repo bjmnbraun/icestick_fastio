@@ -25,8 +25,9 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
     #max_len      = 1<<logn_max_len
     
     IO =  ["valid", In(Array(n,Bit))]
-    IO += ["length", In(Array(n,Array(logn_max_len,Bit)))]
-    IO += ["data0", In(Array(1<<logn_max_len,Array(8,Bit)))]
+    IO += ["length0", In(Array(logn_max_len,Bit))]
+    #IO += ["data0", In(Array(1<<logn_max_len,Array(8,Bit)))]
+    IO += ["data0_arg0", In(Array(8,Bit)), "data0_arg1", In(Array(8,Bit)), "data0_arg2", In(Array(8,Bit)), "data0_arg3", In(Array(8,Bit))]
     if n > 1:
       IO += ["data1", In(Array(1<<logn_max_len,Array(8,Bit)))]
     if n > 2:
@@ -57,7 +58,7 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
       wire(done, valid_latch.CE)
       
       # Latch args
-      arg_latch0 = RAM(logn_max_len,printf.data0, print_cnt.O)
+      arg_latch0 = RAM(logn_max_len,array(printf.data0_arg0, printf.data0_arg1, printf.data0_arg2, printf.data0_arg3), print_cnt.O)
       #arg_latch0(CE=done)
       if n > 1:
         arg_latch1 = RAM(logn_max_len,printf.data1, print_cnt.O)
@@ -92,8 +93,8 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
         
         wire(arg_latch0.O, data_mux.I0)
         wire(arg_latch1.O, data_mux.I1)
-        wire(printf.length[0], len_mux.I0)
-        wire(printf.length[1], len_mux.I1)
+        wire(printf.length0, len_mux.I0)
+        wire(printf.length1, len_mux.I1)
         if n > 2:
           wire(arg_latch2.O, data_mux.I2)
           wire(arg_latch3.O, data_mux.I3)
@@ -105,8 +106,8 @@ def DefineIOPrintf (n, init=0, ce=False, r=False, s=False):
       else:
         # Just 1 printf defined
         len_mux  = Mux(2,logn_max_len)
-        wire(printf.length[0], len_mux.I0)
-        wire(printf.length[0], len_mux.I1)
+        wire(printf.length0, len_mux.I0)
+        wire(printf.length0, len_mux.I1)
         wire(0, len_mux.S)
         
         # Wire valid directly to latched valid and data directly to data_out

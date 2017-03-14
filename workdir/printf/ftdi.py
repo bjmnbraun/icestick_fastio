@@ -39,11 +39,11 @@ printf = IOPrintf(1, ce=False, r=True)
 printf(RESET=main.RTS)
 
 # Just wire up 4 characters to 4 arguments for now
-wire(init[0], printf.data0[0])
-wire(init[1], printf.data0[1])
-wire(init[2], printf.data0[2])
-wire(init[3], printf.data0[3])
-wire(length, printf.length[0])
+wire(init[0], printf.data0_arg0)
+wire(init[1], printf.data0_arg1)
+wire(init[2], printf.data0_arg2)
+wire(init[3], printf.data0_arg3)
+wire(length, printf.length0)
 
 # Set valid always for now (this is user defined circuit)
 wire(valid,  printf.valid[0])
