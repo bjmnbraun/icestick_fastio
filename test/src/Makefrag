@@ -1,0 +1,2 @@
+APPS_PYFILES :=  \
+        src/printf_app.py

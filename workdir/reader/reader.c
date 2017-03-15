@@ -293,15 +293,19 @@ static int readCallback(
         if(length > 0 && CONFIG_DUMP_READ){
                 size_t i = 0;
                 for(i = 0; i < length; i++){
-                        char c = buffer[i];
-                        if (c > 0x02){
+                        unsigned char c = buffer[i];
+#if 0
+                        if (c == ' ') {
+                                printf("_");
+                        } else if (c > 0x02) {
                                 printf("%c",c);
+                        } else {
+                                printf("%02x",c);
                         }
+#else
+                                printf("%02d ",c);
+#endif
                 }
-                printf("\n");
-
-                //XXX
-                CONFIG_DUMP_READ = false;
         }
         if (progress){
                 printf("Rate %7.3f\n", progress->currentRate / (1024.0*1024.0));
@@ -346,14 +350,17 @@ ftdi_readstream_cb(struct libusb_transfer *transfer)
 
         if (length <= 2){
                 printf("zero length transaction\n");
+                res = -EINVAL;
                 goto done;
         }
 #if 1
         //ftdi puts two bytes of modem status at the start of each packet
 
+        /*
         if (ptr[2] != 'H'){
                 printf("Bad buffer start: %d\n", length);
         }
+        */
 
 
         int numPackets = (length + packet_size - 1) / packet_size;
@@ -373,13 +380,24 @@ ftdi_readstream_cb(struct libusb_transfer *transfer)
 
             res = state->callback(ptr + 2, payloadLen,
                                   NULL, state->userdata);
+            if (res){
+                goto done;
+            }
 
             ptr += packetLen;
             length -= packetLen;
         }
+        if (CONFIG_DUMP_READ){
+                printf("\n");
+        }
+        //XXX
+        CONFIG_DUMP_READ = false;
 
         if (transfer->actual_length != transfer->length){
                 printf("Incomplete transaction (%d)\n", transfer->actual_length);
+                res = -EINVAL;
+                goto done;
+        } else {
         }
 
         /*
@@ -395,10 +413,7 @@ ftdi_readstream_cb(struct libusb_transfer *transfer)
 done:
         if (res)
         {
-                //Yuck shouldn't clean up here
             state->result = res;
-            free(transfer->buffer);
-            libusb_free_transfer(transfer);
         }
         else
         {
@@ -457,7 +472,7 @@ false};
         //
         //the *8 here must match exactly the output chunk size output by the
         //FPGA program.
-        int bufferSize = ftdi->max_packet_size * 8;
+        int bufferSize = 4096;//ftdi->max_packet_size * 8;
         int xferIndex;
         int err = 0;
 
@@ -537,6 +552,7 @@ false};
         }
 
 again:
+        state.result = 0;
         state.done = false;
         transfer->status = -1;
         err = libusb_submit_transfer(transfer);
@@ -545,18 +561,6 @@ again:
                 goto cleanup;
         }
 
-        //Tell the current FPGA that we have receive capacity for the current buffer
-        //and one more, so it can move on to the next
-        if (ftdi_setdtr(&ftdic,0))
-        {
-                printf("setflowctrl error\n");
-                error();
-        }
-        if (ftdi_setdtr(&ftdic,1))
-        {
-                printf("setflowctrl error\n");
-                error();
-        }
 
         //TODO if we time out or otherwise error below, re-reset the device
         //with the reset bit and flushing the FTDI buffers
@@ -598,8 +602,20 @@ TimevalDiff(&progress->current.time,
         } while (!state.result && !state.done);
 
         if (state.result == 0){
-                goto again;
+                //Tell the current FPGA that we have receive capacity for the current buffer
+                //and one more, so it can move on to the next
+                if (ftdi_setdtr(&ftdic,0))
+                {
+                        printf("setflowctrl error\n");
+                        error();
+                }
+                if (ftdi_setdtr(&ftdic,1))
+                {
+                        printf("setflowctrl error\n");
+                        error();
+                }
         }
+        goto again;
 
 cleanup:
         //TODO proper cleanup

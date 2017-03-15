@@ -197,7 +197,7 @@ def DefineCounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False):
 
     r = False
     s = False
-    name = _CounterName('CounterModM', n, ce, r, s)
+    name = _CounterName('CounterModM%d_' % m, n, ce, r, s)
     if name in CounterCache:
          return CounterCache[name]
 
