@@ -1,18 +1,117 @@
 import sys
+import json
 from magma import *
 from mantle import *
 from rom import ROM
 from rom import RAM
+from uart import UART
 from mantle.lattice.mantle40.MUX import Mux4
 from mantle.lattice.mantle40.register import _RegisterName, Register
 from mantle.lattice.mantle40.compare import LT
 from boards.icestick import IceStick
+
+PrintNameCache  = {}
+PrintValidCache = {}
+PrintLenCache   = {}
+PrintDataCache  = {}
+
+f = open('data.json', 'w')
 
 def REGs(n):
     return [Register(8, ce=True) for i in range(n)]
 
 def pad_zeros(init, n):
     return array(*[init[i] if i < len(init) else init[0] for i in range(n)])
+
+def _PrintIOName(name, n):
+    name += '%d' % n
+    return name
+
+def PrintIO (valid, msg, *argv):
+
+  header_bitwidth = 4
+  
+  idx  = len(PrintNameCache)
+  name = _PrintIOName('IOPrintf', idx)
+  args = ["I", In(Bit)]
+  
+  PrintNameCache[name] = name
+  PrintValidCache[idx] = valid
+
+  # Attach 8-bit header which is just index for now and concatenate to the input args
+  PrintDataCache[idx] = array(*[x for c in [int2seq(idx,header_bitwidth)] for x in c])
+  for arg in argv:
+    PrintDataCache[idx] = concat(PrintDataCache[idx], arg)
+
+  # ceiling length to nearest multiple of 8 and zero pad the input to the length
+  PrintLenCache[idx]  = (len(PrintDataCache[idx]) + 7) >> 3
+  PrintDataCache[idx] = pad_zeros(PrintDataCache[idx], PrintLenCache[idx] * 8)
+  
+  if 0:
+    print(PrintLenCache[idx])
+    print(PrintDataCache)
+    print(len(PrintDataCache[idx]))
+
+  # dump CPU side information to JSON file - message, total packet length, header bitwidth, argument bitwidth
+  json_data = {'msg' : msg, 'total_byte_len' : PrintLenCache[idx], 'header_bitwidth' : header_bitwidth, 'arg_bitwidths' : [len(arg) for arg in argv]}
+  json.dump(json_data, f, indent=2)
+  
+  return 0
+
+def DefinePrintIOConn(connection, ce=False, r=False, s=False):
+
+  n = len(PrintNameCache)
+  init = 0
+
+  class _IOPrintIOConn(Circuit):
+    name = _RegisterName('IOPrintIOConn', n, init, ce, r, s)
+    
+    # fixed input/output to printIO
+    IO = ["dtr", In(Bit), "TX", Out(Bit)] + ClockInterface(ce,r,s)
+    
+    # per print statement input/output to printIO
+    for i in PrintLenCache:
+      IO += ["valid%d"%i, In(Bit)]
+
+    for i in PrintDataCache:
+      IO += ["data%d"%i, In(Array(len(PrintDataCache[i]),Bit))]
+
+    @classmethod
+    def definition(printfconn):
+      # Create UART and printf and hook it all up
+      if connection == "UART":
+        conn = UART(1,0)
+        conn();
+      else:
+        assert(0)
+
+      # Create printf with input length array and hook up RESET/DTR
+      printf = IOPrintf([PrintLenCache[i] for i in PrintLenCache], ce=ce, r=r)
+      printf(RESET=printfconn.RESET,dtr=printfconn.dtr)
+      
+      # Wire up the valid and data fields to printf
+      for i in PrintLenCache:
+        wire(getattr(printfconn,"valid%d"%i), getattr(printf,"valid%d"%i))
+        wire(getattr(printfconn,"data%d"%i),  getattr(printf,"data%d"%i))
+
+      # Hook printf up to uart connection type
+      wire(printf.valid_out, conn.valid)
+      wire(printf.data_out,  conn.data)
+      wire(conn.ready,  printf.ready)
+      
+      # Wire the UART output to top level
+      wire(conn.TX, printfconn.TX)
+
+  return _IOPrintIOConn
+  
+
+def PrintIOConn(connection, ce=False, r=False, s=False, **kwargs):
+    circuit = DefinePrintIOConn(connection, ce, r, s)(**kwargs)
+    for i in PrintValidCache:
+      wire(PrintValidCache[i], getattr(circuit,"valid%d"%i))
+      wire(PrintDataCache[i],  getattr(circuit,"data%d"%i))
+      
+    return circuit
 
 def DefineIOPrintf (lengths, ce=False, r=False, s=False):
 
@@ -35,7 +134,11 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
     logn_max_len = log2(max_len)
     if ((1<<logn_max_len) <= max_len):
         logn_max_len = logn_max_len+1
+
     assert((1<<logn_max_len) > max_len)
+
+    # need 2^N input MUX
+    ceil_n = 1 << (log2((n - 1) * 2))
 
     IO = []
     #IO += ["length0", In(Array(logn_max_len,Bit))]
@@ -54,6 +157,7 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
     def definition(printf):
       #Convenience
       logn_max_len = printf.logn_max_len
+      ceil_n       = printf.ceil_n
       baud = 1
       valid_idx = 0
 
@@ -66,7 +170,10 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
 
       # We are done when print_cnt reaches the length of the message
       done = EQ(logn_max_len)
-      wire(print_cnt.O, done.I0)
+      if logn_max_len == 1:
+        wire(print_cnt.O[0], done.I0)
+      else:
+        wire(print_cnt.O, done.I0)
 
       # Need to buffer the reset signal
       resetSignal = DFF()
@@ -106,43 +213,47 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
                       should_accept
               )
               for i in range(n)
-      ]
-      """
-      if n > 1:
-        arg_latch1 = RAM(logn_max_len,printf.data1, print_cnt.O)
-        #arg_latch1(CE=done)
-      if n > 2:
-        arg_latch2 = RAM(logn_max_len,printf.data2, print_cnt.O)
-        #arg_latch2(CE=done)
-        arg_latch3 = RAM(logn_max_len,printf.data3, print_cnt.O)
-        #arg_latch3(CE=done)
-      """
+              ]
 
+      #### NOTE: Clean this up with python techniques & add support to 8 statements
+      
       # Special handling for > 1 printf
       if n > 1:
         # Select winner among valid inputs (choose smallest valid index)
         if n == 2:
           val_idx = LUT2([0,0,1,0])
           val_idx(valid_latch.O[0], valid_latch.O[1])
-        if n == 3:
-          assert(False)
-        if n == 4:
+        if n in [3, 4]:
           val_idx0 = LUT4([0,0,1,0,0,0,1,0,1,0,1,0,0,0,1,0])
           val_idx1 = LUT4([0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0])
-          val_idx0(valid_latch.O)
-          val_idx1(valid_latch.O)
-          val_idx  = array(val_idx1,val_idx0)
+          val_idx0()
+          val_idx1()
+          for i in range(n):
+            wire(valid_latch.O[i], getattr(val_idx0,"I%d"%i))
+            wire(valid_latch.O[i], getattr(val_idx1,"I%d"%i))
+          for i in range(ceil_n):
+            if i >= n:
+              wire(0, getattr(val_idx0,"I%d"%i))
+              wire(0, getattr(val_idx1,"I%d"%i))
+          val_idx  = array(val_idx1.O,val_idx0.O)
 
         # Select arguments to feed to UART based on valid index
-        data_mux = Mux(n,8)
-        len_mux  = Mux(n,logn_max_len)
+        data_mux = Mux(ceil_n,8)
+        len_mux  = Mux(ceil_n,logn_max_len)
         wire(val_idx, data_mux.S)
         wire(val_idx, len_mux.S)
 
         for i in range(n):
                 wire(arg_latch[i], getattr(data_mux,"I%d"%i))
                 wire(array(*int2seq(lengths[i], logn_max_len)), getattr(len_mux,"I%d"%i))
-
+        # Connect the inputs to ground for unused MUX inputs
+        for i in range(ceil_n):
+          if i >= n:
+            zeros = logn_max_len * [0]
+            wire(array(*zeros), getattr(len_mux,"I%d"%i))
+            zeros = 8 * [0]
+            wire(array(*zeros), getattr(data_mux,"I%d"%i))
+  
         # Wire data mux output to data_out
         wire(data_mux.O, printf.data_out)
         length = len_mux.O
@@ -152,7 +263,10 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
         length = array(*int2seq(lengths[0], logn_max_len))
 
       #Use length to determine "done"
-      wire(length, done.I1)
+      if logn_max_len == 1:
+        wire(length[0], done.I1)
+      else:
+        wire(length, done.I1)
 
       #TODO we have to push some fake printfs through the pipeline sometimes.
       #Otherwise, the client will stall on a large buffer, and there is a
@@ -215,9 +329,9 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
       #TODO
       #Advance on ready, unless done, or reset
       wire(LUT3((I0 & I1)|I2)(running, printf.ready, reset), print_cnt.CE)
-
   return _IOPrintf
 
 def IOPrintf(lengths, ce=False, r=False, s=False, **kwargs):
     return DefineIOPrintf(lengths, ce, r, s)(**kwargs)
 
+    
