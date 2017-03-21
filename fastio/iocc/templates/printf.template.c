@@ -10,9 +10,12 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <libusb.h>
+#include <time.h>
 
 struct ftdi_context ftdic;
 bool ftdic_open = false;
+
+struct timeval start_tv;
 
 void error()
 {
@@ -118,6 +121,11 @@ int process_printf_output(size_t* read, void* buffer, size_t size){
                         break;
                 }
 
+                //Print out a timestamp
+                struct timeval tv;
+                gettimeofday(&tv, NULL);
+                printf ("[ %4zd.%06zd ] ", tv.tv_sec - start_tv.tv_sec, tv.tv_usec);
+
                 //There is enough space.
                 bit_iter iter = {.buffer = (unsigned char*)buffer + HEADER_SIZE};
 
@@ -128,7 +136,7 @@ int process_printf_output(size_t* read, void* buffer, size_t size){
                 size_t total_size = HEADER_SIZE + length;
 
                 //XXX
-#if 0
+#if 1
                 {
                         size_t i;
                         for(i = 0; i < total_size; i++){
@@ -259,6 +267,8 @@ int my_ftdi_readstream(struct ftdi_context *ftdi)
 {
         FTDIStreamState state = { NULL, ftdi->max_packet_size, 0,
 false};
+
+        gettimeofday(&start_tv, NULL);
         //HACKS!!!
         //
         //Buffer must be a multiple of packet size
