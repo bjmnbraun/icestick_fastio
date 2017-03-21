@@ -1,3 +1,4 @@
 APPS_PYFILES :=  \
-        src/printf_app.py \
-        src/pattern.py
+        src/display_app.py \
+#        src/printf_app.py \
+#        src/pattern.py \

@@ -1,5 +1,9 @@
 from printf import *
 
+from display import *
+
+import uart
+
 from fastio_common import *
 
 iospec_prefix = None
@@ -23,18 +27,47 @@ def fastio_setup(connection_type, _iospec_prefix, RESET, DTR, TX):
         }
         print(connection)
 
+FASTIO_MODE_PRINTF = 1
+FASTIO_MODE_DISPLAY = 2
+
+mode = None
 def fastio_printf(condition, format_string, *argv):
+        global mode
+        if (mode and mode != FASTIO_MODE_PRINTF):
+                raise ValueError("Can't mix I/O modes yet")
+        mode = FASTIO_MODE_PRINTF
         return PrintIO(iospec_file, condition, format_string, *argv)
 
-def fastio_compile_hook():
+def fastio_simple_display(width, height, bpp):
+        global mode
         global connection
-        return PrintIOConn(
-                "UART",
-                ce=False,
-                r=True,
-                s=False
-        )(
+        if (mode and mode != FASTIO_MODE_DISPLAY):
+                raise ValueError("Can't mix I/O modes yet")
+        if (mode == FASTIO_MODE_DISPLAY):
+                raise ValueError("Multiple displays not yet implemented")
+        mode = FASTIO_MODE_DISPLAY
+
+        display = DefineDisplayConn(
+                "UART", width, height, bpp
+        )
+        (
                 RESET=connection['RESET'],
                 DTR=connection['DTR'],
                 TX=connection['TX']
         )
+        return display
+
+def fastio_compile_hook():
+        global mode
+        global connection
+        if (mode == FASTIO_MODE_PRINTF):
+                PrintIOConn(
+                        "UART",
+                        ce=False,
+                        r=True,
+                        s=False
+                )(
+                        RESET=connection['RESET'],
+                        DTR=connection['DTR'],
+                        TX=connection['TX']
+                )
