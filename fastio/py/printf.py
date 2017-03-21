@@ -54,7 +54,7 @@ def PrintIO (valid, msg, *argv):
     print(len(PrintDataCache[idx]))
 
   # dump CPU side information to JSON file - message, total packet length, header bitwidth, argument bitwidth
-  json_data = {'msg' : msg, 'total_byte_len' : PrintLenCache[idx], 'header_bitwidth' : header_bitwidth, 'arg_bitwidths' : [len(arg) for arg in argv]}
+  json_data = {'type': 'printf', 'msg' : msg, 'total_byte_len' : PrintLenCache[idx], 'header_bitwidth' : header_bitwidth, 'arg_bitwidths' : [len(arg) for arg in argv]}
   json.dump(json_data, f, indent=2)
   f.write("\n")
   
@@ -306,7 +306,7 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
           DTRRising = LUT2(~I0 & I1)(DTRBuffer_lag, DTRBuffer)
 
           #Each ACK acks this many bytes read from the stream:
-          bufferSize = 510*8
+          bufferSize = 510*4
 
           BytesAcked = Register(16, r=True,ce=True)
           BytesAcked_n = Add(16)

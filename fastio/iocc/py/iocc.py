@@ -4,10 +4,6 @@ import iocc_emitter
 from splitstream import splitfile
 from enum import Enum
 
-iocc_emitter.init(sys.argv[1])
-iospec_f = open(sys.argv[2], 'r')
-out_prefix = open(sys.argv[3] + "-io.c", 'w')
-
 class IOModes(Enum):
         UNKNOWN = 1
         PRINTF = 2
@@ -17,30 +13,51 @@ class IOModes(Enum):
 #Parsing state:
 current_mode = IOModes.UNKNOWN
 connections = {}
+io_elements = []
 
 def parse_connection(connection):
         global connections
+        if (len(connections)):
+                raise ValueError("Multiple connections not supported")
         connection_id = connection['id']
         connections[connection_id] = connection
-        print(connections)
+        #print(connections)
 
-def parse_printf(printf):
+def parse_io_element(element):
         global current_mode
-        if (current_mode == IOModes.UNKNOWN):
-                current_mode = IOModes.PRINTF
-                iocc_emitter.emit_printf_header()
-        elif (current_mode == IOModes.PRINTF):
-                pass
-        else:
-                raise ValueError("Can't mix IOs yet!")
-
-        iocc_emitter.emit_printf(printf)
-
-for jsonstr in splitfile(iospec_f, format="json"):
-        iospec = json.loads(jsonstr)
-        if (iospec['type'] == "connection"):
-                parse_connection(iospec)
-        elif (iospec['type'] == "printf"):
-                parse_printf(iospec)
+        global io_elements
+        if (iospec['type'] == "printf"):
+                element_mode = IOModes.PRINTF
         else:
                 raise ValueError
+        if element_mode == current_mode or current_mode == IOModes.UNKNOWN:
+                current_mode = element_mode
+        else:
+                raise ValueError("Can't currently mix modes!")
+        io_elements += [element]
+        #print(io_elements)
+
+#Main loop
+iocc_emitter.init(sys.argv[1], sys.argv[3])
+
+#XXX
+parse_connection({'id':0})
+
+with open(sys.argv[2], 'r') as iospec_f:
+        for jsonstr in splitfile(iospec_f, format="json"):
+                iospec = json.loads(jsonstr)
+                if (iospec['type'] == "connection"):
+                        parse_connection(iospec)
+                elif (iospec['type'] == "printf"):
+                        parse_io_element(iospec)
+                else:
+                        raise ValueError
+
+#TODO support for multiple connections
+if (current_mode == IOModes.PRINTF):
+        iocc_emitter.emit_printf(
+                list(connections.values())[0],
+                io_elements
+        )
+else:
+        raise ValueError
