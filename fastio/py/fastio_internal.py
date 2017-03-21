@@ -47,14 +47,12 @@ def fastio_simple_display(width, height, bpp):
                 raise ValueError("Multiple displays not yet implemented")
         mode = FASTIO_MODE_DISPLAY
 
-        display = DefineDisplayConn(
-                "UART", width, height, bpp
+        display = DisplayConn(
+                iospec_file, "UART", width, height, bpp
         )
-        (
-                RESET=connection['RESET'],
-                DTR=connection['DTR'],
-                TX=connection['TX']
-        )
+        wire(connection['RESET'], display.RESET)
+        wire(connection['DTR'], display.DTR)
+        wire(connection['TX'], display.TX)
         return display
 
 def fastio_compile_hook():

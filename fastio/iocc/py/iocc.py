@@ -28,6 +28,8 @@ def parse_io_element(element):
         global io_elements
         if (iospec['type'] == "printf"):
                 element_mode = IOModes.PRINTF
+        elif (iospec['type'] == "display"):
+                element_mode = IOModes.DISPLAY
         else:
                 raise ValueError
         if element_mode == current_mode or current_mode == IOModes.UNKNOWN:
@@ -49,7 +51,7 @@ try:
                         iospec = json.loads(jsonstr)
                         if (iospec['type'] == "connection"):
                                 parse_connection(iospec)
-                        elif (iospec['type'] == "printf"):
+                        elif (iospec['type'] == "printf" or iospec['type'] == "display"):
                                 parse_io_element(iospec)
                         else:
                                 raise ValueError
@@ -62,6 +64,11 @@ if (current_mode == IOModes.PRINTF):
         iocc_emitter.emit_printf(
                 list(connections.values())[0],
                 io_elements
+        )
+elif (current_mode == IOModes.DISPLAY):
+        iocc_emitter.emit_display(
+                list(connections.values())[0],
+                io_elements[0]
         )
 else:
         raise ValueError

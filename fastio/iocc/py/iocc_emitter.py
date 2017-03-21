@@ -67,6 +67,21 @@ break;
         )
 
         #fargs[] = ""
+        #print(fargs)
+
+        generated = template.safe_substitute(fargs)
+        #print(generated)
+
+        with open(out_prefix+"-io.c", 'w') as f:
+                f.write(generated)
+
+def emit_display(connection, display):
+        global template_dir
+        global out_prefix
+        with open(os.path.join(template_dir, "display.template.c"), 'r') as f:
+                template = Template(f.read())
+
+        fargs = {}
         print(fargs)
 
         generated = template.safe_substitute(fargs)

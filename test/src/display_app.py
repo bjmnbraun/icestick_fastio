@@ -27,28 +27,35 @@ wire(main.DTR, main.D2)
 
 fastio_setup(UART,sys.argv[1], RESET=main.RTS, DTR=main.DTR, TX=main.TX)
 
-width = 2
-height = 2
+width = 64
+height = 64
 #Grayscale for now
 bpp = 8
 
-def MyProcGraphics():
-        adder0 = Add(16)()
-        adder1 = Add(16)()
+def ProcGraphics():
+        adder0 = Add(8)
+        adder1 = Add(8)
         wire(adder0, adder1.I0)
+        print(dir(adder1))
         _ignore = In(Bit)()
+        _const1 = Out(Bit)()
+        wire(1, _const1)
         return AnonymousCircuit(
                 "x", adder0.I0,
                 "y", adder0.I1,
                 "framecount", adder1.I1,
                 "ready", _ignore,
-                "valid", 1,
+                "valid", _const1,
                 "pixel", adder1.O
         )
 
+graphics = ProcGraphics()
+print("Graphics is", graphics)
+
 display = fastio_simple_display(width, height, bpp)
+print("Display is", display)
 wire(display.x, graphics.x)
-wire(display.x, graphics.y)
+wire(display.y, graphics.y)
 wire(display.framecount, graphics.framecount)
 wire(display.ready, graphics.ready)
 wire(graphics.pixel, display.pixel)

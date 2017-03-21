@@ -2,7 +2,7 @@ from magma import *
 from mantle.lattice.mantle40.register import Register
 from mantle.lattice.mantle40.decode import Decode
 from mantle.lattice.mantle40.adder import Adders
-from mantle.lattice.mantle40.logic import And2
+from mantle.lattice.mantle40.logic import And2, Or2
 from mantle.lattice.mantle40.MUX import Mux
 
 __all__  = ['DefineCounter', 'Counter']
@@ -193,9 +193,8 @@ def UpDownCounter(n, cout=True, next=False, ce=False, r=False, s=False,
 #
 # Create an n-bit mod-m counter
 #
-def DefineCounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False):
+def DefineCounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False, r=False):
 
-    r = False
     s = False
     name = _CounterName('CounterModM%d_' % m, n, ce, r, s)
     if name in CounterCache:
@@ -204,6 +203,8 @@ def DefineCounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False):
     args = []
     if cin:
         args += ['CIN', In(Bit)]
+    if ce:
+        args += ['CE', In(Bit)]
 
     args += ["O", Array(n, Out(Bit))]
     if cout:
@@ -217,9 +218,11 @@ def DefineCounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False):
                    ce=ce, r=True, s=False)
     reset = Decode(m - 1, n)(counter)
 
+    if r:
+        reset = Or2()(reset, CounterModM.RESET)
+
     if ce:
-        CE = In(Bit)()
-        reset = And2()(reset, CE)
+        reset = And2()(reset, CounterModM.CE)
         # reset is sometimes called rollover or RO
         # note that we don't return RO in Counter
 
@@ -227,8 +230,8 @@ def DefineCounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False):
 
     wire(reset, counter.RESET) # synchronous reset
 
-    if ce: 
-        wire(CE, counter.CE)
+    if ce:
+        wire( CounterModM.CE, counter.CE)
 
     if cin:
         wire( CounterModM.CIN, counter.CIN )
@@ -239,13 +242,11 @@ def DefineCounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False):
         wire( reset, CounterModM.COUT )
 
     wire(CounterModM.CLK, counter.CLK)
-    if hasattr(counter,"CE"):
-        wire(CounterModM.CE, counter.CE)
 
     EndCircuit()
 
     CounterCache[name] = CounterModM
     return CounterModM
 
-def CounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False, **kwargs):
-    return DefineCounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False)(**kwargs)
+def CounterModM(m, n, cin=False, cout=True, incr=1, next=False, ce=False, r=False, **kwargs):
+    return DefineCounterModM(m, n, cin=cin, cout=cout, incr=incr, next=False, ce=ce, r=r)(**kwargs)
