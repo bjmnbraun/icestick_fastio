@@ -280,7 +280,7 @@ false};
         //
         //the *8 here must match exactly the output chunk size output by the
         //FPGA program.
-        int bufferSize = 512*4;//ftdi->max_packet_size * 8;
+        int bufferSize = 512*8;//ftdi->max_packet_size * 8;
         int xferIndex;
         int err = 0;
 

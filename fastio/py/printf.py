@@ -306,7 +306,7 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
           DTRRising = LUT2(~I0 & I1)(DTRBuffer_lag, DTRBuffer)
 
           #Each ACK acks this many bytes read from the stream:
-          bufferSize = 510*4
+          bufferSize = 510*8
 
           BytesAcked = Register(16, r=True,ce=True)
           BytesAcked_n = Add(16)
@@ -318,7 +318,10 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
           BytesInFlight = Sub(16)
           BytesInFlight(BytesSent, BytesAcked)
 
-          stream_has_more_space = ULT(16)(BytesInFlight.O, array(*int2seq(bufferSize*2,16)))
+          stream_has_more_space = ULT(16)(
+                  BytesInFlight.O,
+                  array(*int2seq(bufferSize*2 - 1,16))
+          )
 
           #Useful debugging:
           #wire(array(*[BytesInFlight.O[i] for i in range(8)]), printf.data_out)

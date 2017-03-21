@@ -1,8 +1,7 @@
 import sys
 from magma import *
 from mantle import *
-from printf import PrintIO
-from printf import PrintIOConn
+from fastio import *
 from boards.icestick import IceStick
 
 icestick = IceStick()
@@ -40,18 +39,20 @@ timestamp = array(counter.O[27], counter.O[26], counter.O[25], counter.O[24], co
 
 #### End demo applications
 
-# Notes: 
+fastio_setup(UART,sys.argv[1], RESET=main.RTS, DTR=main.DTR, TX=main.TX)
+
+# Notes:
 #  Works for 1,2,3 or 4 print statements with arbitrary bitwidth arguments
 #  Input must be 'array' type: need to add Bit or array support
 #  May be nice to add in 'rising edge detect' for valid input for demo
 #  Need to think of a few good demo applications
 
-PrintIO(counter.COUT, "32 second tick")
-PrintIO(_valid0.COUT, "Mod7 val %d", _valid0.O)
-PrintIO(_valid1.COUT, "Mod13 val %d Mod7 collision %d", _valid1.O, array(_valid0.COUT))
-PrintIO(_valid2.COUT, "Mod23 val %d Mod13 collision %d time %d", _valid2.O, timestamp, array(_valid1.COUT))
+printf(counter.COUT, "32 second tick")
+printf(_valid0.COUT, "Mod7 val %d", _valid0.O)
+printf(_valid1.COUT, "Mod13 val %d Mod7 collision %d", _valid1.O, array(_valid0.COUT))
+printf(_valid2.COUT, "Mod23 val %d Mod13 collision %d time %d", _valid2.O, timestamp, array(_valid1.COUT))
 
-# Add IO connection which ties in print statements (do last before compile)
-printer = PrintIOConn("UART", ce=False, r=True)(RESET=main.RTS,dtr=main.DTR,TX=main.TX)
+#Compilation hook - ideally magma would do this for us
+fastio_compile_hook()
 compile(sys.argv[1], main)
 
