@@ -47,13 +47,11 @@ $(APPS_IOBINARIES) : $(BINDIR)/%/app : $(BINDIR)/%/app.pcf
 
 all: $(APPS_BINFILES) $(APPS_IOBINARIES)
 
-#app-upload is a pseudofile never created, so upload always reuploads
-APPS_UPLOADS := $(patsubst %.py, $(BINDIR)/%/app-upload, $(APPS_PYFILES))
-$(APPS_UPLOADS) : $(BINDIR)/%/app-upload : $(BINDIR)/%/app.bin $(BINDIR)/%/app
-	pushd $(@D) && \
+#upload-* are pseudofiles never created, so upload always reuploads
+APPS_UPLOADS := $(patsubst src/%.py, upload-%, $(APPS_PYFILES))
+$(APPS_UPLOADS) : upload-% : $(BINDIR)/src/%/app.bin $(BINDIR)/src/%/app
+	pushd $(BINDIR)/src/$* && \
 iceprog app.bin
-
-upload: $(APPS_UPLOADS)
 
 clean:
 	rm -rf $(BINDIR)

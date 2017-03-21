@@ -79,7 +79,7 @@ def DefinePrintIOConn(connection, ce=False, r=False, s=False):
         assert(0)
 
       # Create printf with input length array and hook up RESET/DTR
-      printf = IOPrintf([PrintLens[i] for i in PrintLens], ce=ce, r=r)
+      printf = IOPrintf([PrintLens[i] for i in range(len(PrintLens))], ce=ce, r=r)
       printf(RESET=printfconn.RESET,DTR=printfconn.DTR)
       
       # Wire up the valid and data fields to printf
@@ -130,9 +130,6 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
 
     assert((1<<logn_max_len) > max_len)
 
-    # need 2^N input MUX
-    ceil_n = 1 << (log2((n - 1) * 2))
-
     IO = []
     #IO += ["length0", In(Array(logn_max_len,Bit))]
     for i in range(n):
@@ -150,7 +147,6 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
     def definition(printf):
       #Convenience
       logn_max_len = printf.logn_max_len
-      ceil_n       = printf.ceil_n
       baud = 1
       valid_idx = 0
 
@@ -172,24 +168,30 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
       resetSignal = DFF()
       resetSignal(printf.RESET if r else 0)
 
+      # States:
+      # - While printing a message, we are running
+      # - When the message finishes, we become done.
+      #   (done and running both hold for one cycle)
+      # - We hold done, with running false, until backpressure is cleared for
+      # us to reset.
+      # This means you cannot accept a new message until both running and done
+      # are false.
+
       # We accept a message by latching the valid bits and the arguments
       # and transitioning to the running state
       printf_valid = array(*[getattr(printf,"valid%d"%i) for i in range(n)])
       any_valid = OrN(n)
       any_valid(printf_valid)
-      should_accept = LUT2(~I0 & I1)(running, any_valid)
+      should_accept = LUT3(~I0 & ~I1 & I2)(running, done, any_valid)
 
       running_n = LUT3((I0 & ~I1) | I2)(running, done, should_accept)
       running(running_n)
       #Reset running on RESET
       wire(resetSignal, running.RESET)
 
-      #Running is true while we are printing real data, but turns to false if
-      #we are stalling due to backpressure or have nothing to print
-      #
-      #We stay in the done state for many cycles if we are stalled due to
-      #backpressure
-      wire(running,printf.valid_out)
+      #Running becomes true when we have data to print
+      #So, print whenever running && ~done
+      wire(LUT2(I0 & ~I1)(running, done),printf.valid_out)
 
       # Latch valid
       valid_latch = Register(n,ce=True)
@@ -212,6 +214,7 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
       
       # Special handling for > 1 printf
       if n > 1:
+        ceil_n = 1 << (log2((n - 1) * 2))
         # Select winner among valid inputs (choose smallest valid index)
         if n == 2:
           val_idx = LUT2([0,0,1,0])
@@ -228,7 +231,7 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
             if i >= n:
               wire(0, getattr(val_idx0,"I%d"%i))
               wire(0, getattr(val_idx1,"I%d"%i))
-          val_idx  = array(val_idx1.O,val_idx0.O)
+          val_idx  = array(val_idx0.O,val_idx1.O)
 
         # Select arguments to feed to UART based on valid index
         data_mux = Mux(ceil_n,8)
@@ -282,8 +285,8 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
           BytesSent_n = Add(16)
           BytesSent_n(BytesSent, array(*int2seq(1, 16)))
           BytesSent(BytesSent_n.O)
-          #Another byte is sent on every cycle where ready && running
-          wire(LUT3((I0 & I1)|I2)(running, printf.ready, resetSignal),BytesSent.CE)
+          #See condition for sending a byte below
+          wire(LUT4((I0 & ~I1 & I2)|I3)(running, done, printf.ready, resetSignal),BytesSent.CE)
           wire(resetSignal, BytesSent.RESET)
 
           #Listen to ACKs via rising edge of DTR register.
@@ -311,7 +314,7 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
 
           stream_has_more_space = ULT(16)(
                   BytesInFlight.O,
-                  array(*int2seq(bufferSize*2 - 1,16))
+                  array(*int2seq(bufferSize*2 - 8,16))
           )
 
           #Useful debugging:
@@ -322,9 +325,8 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
       reset(done, stream_has_more_space, resetSignal)
       wire(reset, print_cnt.RESET)
 
-      #TODO
-      #Advance on ready, unless done, or reset
-      wire(LUT3((I0 & I1)|I2)(running, printf.ready, reset), print_cnt.CE)
+      #Advance on (running & ~done) and ready, or reset
+      wire(LUT4((I0 & ~I1 & I2)|I3)(running, done, printf.ready, reset), print_cnt.CE)
   return _IOPrintf
 
 def IOPrintf(lengths, ce=False, r=False, s=False, **kwargs):

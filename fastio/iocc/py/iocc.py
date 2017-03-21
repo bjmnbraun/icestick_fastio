@@ -43,15 +43,19 @@ iocc_emitter.init(sys.argv[1], sys.argv[3])
 #XXX
 parse_connection({'id':0})
 
-with open(sys.argv[2], 'r') as iospec_f:
-        for jsonstr in splitfile(iospec_f, format="json"):
-                iospec = json.loads(jsonstr)
-                if (iospec['type'] == "connection"):
-                        parse_connection(iospec)
-                elif (iospec['type'] == "printf"):
-                        parse_io_element(iospec)
-                else:
-                        raise ValueError
+try:
+        with open(sys.argv[2], 'r') as iospec_f:
+                for jsonstr in splitfile(iospec_f, format="json"):
+                        iospec = json.loads(jsonstr)
+                        if (iospec['type'] == "connection"):
+                                parse_connection(iospec)
+                        elif (iospec['type'] == "printf"):
+                                parse_io_element(iospec)
+                        else:
+                                raise ValueError
+except FileNotFoundError as e:
+        print("No iospec file generated, building dummy binary")
+        current_mode = IOModes.PRINTF
 
 #TODO support for multiple connections
 if (current_mode == IOModes.PRINTF):

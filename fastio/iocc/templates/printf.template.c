@@ -38,6 +38,7 @@ typedef struct
     int packetsize;
     int result;
     bool done;
+    bool should_ack;
     FTDIProgressInfo progress;
 } FTDIStreamState;
 
@@ -52,16 +53,14 @@ int pull_bits_int(bit_iter* iter, size_t nbits){
         int toRet = 0;
 
         //There are faster ways to do this, but whatever:
-        while(nbits){
+        size_t j = 0;
+        for(j = 0; j < nbits; j++){
                 //Convenience
                 size_t i = iter->i;
                 int cbit = (iter->buffer[i/8]>>(i%8))&1;
-                toRet = (toRet << 1) | cbit;
+                toRet |= cbit << j;
 
                 iter->i++;
-
-                //Advance?
-                nbits--;
         }
 
         return toRet;
@@ -71,16 +70,14 @@ long pull_bits_long(bit_iter* iter, size_t nbits){
         long toRet = 0;
 
         //There are faster ways to do this, but whatever:
-        while(nbits){
+        size_t j = 0;
+        for(j = 0; j < nbits; j++){
                 //Convenience
                 size_t i = iter->i;
                 int cbit = (iter->buffer[i/8]>>(i%8))&1;
-                toRet = (toRet << 1) | cbit;
+                toRet |= cbit << j;
 
                 iter->i++;
-
-                //Advance?
-                nbits--;
         }
 
         return toRet;
@@ -122,7 +119,7 @@ int process_printf_output(size_t* read, void* buffer, size_t size){
                 }
 
                 //There is enough space.
-                bit_iter iter = {.buffer = buffer};
+                bit_iter iter = {.buffer = (unsigned char*)buffer + HEADER_SIZE};
 
                 switch(index){
                         ${PRINTF_CASES}
@@ -151,6 +148,9 @@ int process_printf_output(size_t* read, void* buffer, size_t size){
 unsigned char packet[512*2];
 size_t bytes_in_packet = 0;
 
+int bufferSize = 512*8;//ftdi->max_packet_size * 8;
+size_t bytes_read_no_ack = 0;
+
  //state->result is only set when some error happens
 static void LIBUSB_CALL
 ftdi_readstream_cb(struct libusb_transfer *transfer)
@@ -171,8 +171,7 @@ ftdi_readstream_cb(struct libusb_transfer *transfer)
         }
 
         if (length <= 2){
-                printf("zero length transaction\n");
-                res = -EINVAL;
+                //printf("zero length transaction\n");
                 goto done;
         }
         //ftdi puts two bytes of modem status at the start of each packet. The last packet might be incomplete.
@@ -190,8 +189,9 @@ ftdi_readstream_cb(struct libusb_transfer *transfer)
             if (packetLen <= 2)
                 break;
 
-            printf("Packet %d Length %d\n", i, packetLen);
+            //printf("Packet %d Length %d\n", i, packetLen);
 
+            bytes_read_no_ack += packetLen;
             payloadLen = packetLen - 2;
             state->progress.current.totalBytes += payloadLen;
 
@@ -231,6 +231,10 @@ done:
         {
             state->done = true;
             state->result = 0;
+            if (bytes_read_no_ack >= bufferSize){
+                bytes_read_no_ack -= bufferSize;
+                state->should_ack = true;
+            }
         }
         return;
     } else {
@@ -280,7 +284,6 @@ false};
         //
         //the *8 here must match exactly the output chunk size output by the
         //FPGA program.
-        int bufferSize = 512*8;//ftdi->max_packet_size * 8;
         int xferIndex;
         int err = 0;
 
@@ -359,15 +362,34 @@ false};
                 error();
         }
 
+        bool should_ack = false;
+
 again:
         state.result = 0;
         state.done = false;
+        state.should_ack = false;
         transfer->status = -1;
         err = libusb_submit_transfer(transfer);
         if (err) {
                 fprintf(stderr, "Can't submit\n");
                 goto cleanup;
         }
+
+        if (should_ack){
+                //Tell the current FPGA that we have receive capacity for the current buffer
+                //and one more, so it can move on to the next
+                if (ftdi_setdtr(&ftdic,0))
+                {
+                        printf("setflowctrl error\n");
+                        error();
+                }
+                if (ftdi_setdtr(&ftdic,1))
+                {
+                        printf("setflowctrl error\n");
+                        error();
+                }
+        }
+        should_ack = false;
 
 
         //TODO if we time out or otherwise error below, re-reset the device
@@ -404,31 +426,24 @@ TimevalDiff(&progress->current.time,
                                 (progress->current.totalBytes -
                                  progress->prev.totalBytes) / timeSincePrev;
 
-                        printf(
-                                "Rate: %.3f\n",
-                                (progress->currentRate / (1024.0*1024.0))
-                        );
+                        if (progress->currentRate){
+                                printf(
+                                        "Rate: %.3f\n",
+                                        (progress->currentRate / (1024.0*1024.0))
+                                );
+                        }
                         progress->prev = progress->current;
                 }
         } while (!state.result && !state.done);
 
-        if (state.result == 0){
-                //Tell the current FPGA that we have receive capacity for the current buffer
-                //and one more, so it can move on to the next
-                if (ftdi_setdtr(&ftdic,0))
-                {
-                        printf("setflowctrl error\n");
-                        error();
-                }
-                if (ftdi_setdtr(&ftdic,1))
-                {
-                        printf("setflowctrl error\n");
-                        error();
-                }
-                goto again;
-        } else {
-                //Done.
+        if (state.result){
+                goto cleanup;
         }
+
+        if (state.should_ack){
+                should_ack = true;
+        }
+        goto again;
 
 cleanup:
         //TODO proper cleanup
@@ -513,8 +528,8 @@ int main(int argc, char **argv)
         }
 
         //For printf, low latency is great!
-        if (ftdi_set_latency_timer(&ftdic, 16)){
-                printf("Couldn't set latency timer to 16ms\n");
+        if (ftdi_set_latency_timer(&ftdic, 2)){
+                printf("Couldn't set latency timer to 2ms\n");
                 error();
         }
 
