@@ -10,12 +10,9 @@ from mantle.lattice.mantle40.register import _RegisterName, Register
 from mantle.lattice.mantle40.compare import LT
 from boards.icestick import IceStick
 
-PrintNameCache  = {}
-PrintValidCache = {}
-PrintLenCache   = {}
-PrintDataCache  = {}
-
-f = open('data.json', 'w')
+PrintValids = {}
+PrintLens   = {}
+PrintDatas  = {}
 
 def REGs(n):
     return [Register(8, ce=True) for i in range(n)]
@@ -24,37 +21,31 @@ def REGs(n):
 def pad_garbage(init, n):
     return array(*[init[i] if i < len(init) else init[0] for i in range(n)])
 
-def _PrintIOName(name, n):
-    name += '%d' % n
-    return name
-
-def PrintIO (valid, msg, *argv):
+def PrintIO (f, valid, msg, *argv):
 
   header_bitwidth = 8
   
-  idx  = len(PrintNameCache)
-  name = _PrintIOName('IOPrintf', idx)
+  idx  = len(PrintLens)
   args = ["I", In(Bit)]
   
-  PrintNameCache[name] = name
-  PrintValidCache[idx] = valid
+  PrintValids[idx] = valid
 
   # Attach 8-bit header which is just index for now and concatenate to the input args
-  PrintDataCache[idx] = array(*[x for c in [int2seq(idx,header_bitwidth)] for x in c])
+  PrintDatas[idx] = array(*[x for c in [int2seq(idx,header_bitwidth)] for x in c])
   for arg in argv:
-    PrintDataCache[idx] = concat(PrintDataCache[idx], arg)
+    PrintDatas[idx] = concat(PrintDatas[idx], arg)
 
   # ceiling length to nearest multiple of 8 and zero pad the input to the length
-  PrintLenCache[idx]  = (len(PrintDataCache[idx]) + 7) >> 3
-  PrintDataCache[idx] = pad_garbage(PrintDataCache[idx], PrintLenCache[idx] * 8)
+  PrintLens[idx]  = (len(PrintDatas[idx]) + 7) >> 3
+  PrintDatas[idx] = pad_garbage(PrintDatas[idx], PrintLens[idx] * 8)
   
   if 0:
-    print(PrintLenCache[idx])
-    print(PrintDataCache)
-    print(len(PrintDataCache[idx]))
+    print(PrintLens[idx])
+    print(PrintDatas)
+    print(len(PrintDatas[idx]))
 
   # dump CPU side information to JSON file - message, total packet length, header bitwidth, argument bitwidth
-  json_data = {'type': 'printf', 'msg' : msg, 'total_byte_len' : PrintLenCache[idx], 'header_bitwidth' : header_bitwidth, 'arg_bitwidths' : [len(arg) for arg in argv]}
+  json_data = {'type': 'printf', 'msg' : msg, 'total_byte_len' : PrintLens[idx], 'header_bitwidth' : header_bitwidth, 'arg_bitwidths' : [len(arg) for arg in argv]}
   json.dump(json_data, f, indent=2)
   f.write("\n")
   
@@ -62,21 +53,21 @@ def PrintIO (valid, msg, *argv):
 
 def DefinePrintIOConn(connection, ce=False, r=False, s=False):
 
-  n = len(PrintNameCache)
+  n = len(PrintLens)
   init = 0
 
   class _IOPrintIOConn(Circuit):
     name = _RegisterName('IOPrintIOConn', n, init, ce, r, s)
     
     # fixed input/output to printIO
-    IO = ["dtr", In(Bit), "TX", Out(Bit)] + ClockInterface(ce,r,s)
+    IO = ["DTR", In(Bit), "TX", Out(Bit)] + ClockInterface(ce,r,s)
     
     # per print statement input/output to printIO
-    for i in PrintLenCache:
+    for i in PrintLens:
       IO += ["valid%d"%i, In(Bit)]
 
-    for i in PrintDataCache:
-      IO += ["data%d"%i, In(Array(len(PrintDataCache[i]),Bit))]
+    for i in PrintDatas:
+      IO += ["data%d"%i, In(Array(len(PrintDatas[i]),Bit))]
 
     @classmethod
     def definition(printfconn):
@@ -88,11 +79,11 @@ def DefinePrintIOConn(connection, ce=False, r=False, s=False):
         assert(0)
 
       # Create printf with input length array and hook up RESET/DTR
-      printf = IOPrintf([PrintLenCache[i] for i in PrintLenCache], ce=ce, r=r)
-      printf(RESET=printfconn.RESET,dtr=printfconn.dtr)
+      printf = IOPrintf([PrintLens[i] for i in PrintLens], ce=ce, r=r)
+      printf(RESET=printfconn.RESET,DTR=printfconn.DTR)
       
       # Wire up the valid and data fields to printf
-      for i in PrintLenCache:
+      for i in PrintLens:
         wire(getattr(printfconn,"valid%d"%i), getattr(printf,"valid%d"%i))
         wire(getattr(printfconn,"data%d"%i),  getattr(printf,"data%d"%i))
 
@@ -109,9 +100,9 @@ def DefinePrintIOConn(connection, ce=False, r=False, s=False):
 
 def PrintIOConn(connection, ce=False, r=False, s=False, **kwargs):
     circuit = DefinePrintIOConn(connection, ce, r, s)(**kwargs)
-    for i in PrintValidCache:
-      wire(PrintValidCache[i], getattr(circuit,"valid%d"%i))
-      wire(PrintDataCache[i],  getattr(circuit,"data%d"%i))
+    for i in PrintValids:
+      wire(PrintValids[i], getattr(circuit,"valid%d"%i))
+      wire(PrintDatas[i],  getattr(circuit,"data%d"%i))
       
     return circuit
 
@@ -150,7 +141,7 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
 
     #Control bits
     IO +=  ["ready", In(Bit)]
-    IO +=  ["dtr", In(Bit)]
+    IO +=  ["DTR", In(Bit)]
 
     #Outputs to I/O primitive
     IO += ["valid_out", Out(Bit), "data_out", Out(Array(8,Bit))] + ClockInterface(ce,r,s)
@@ -296,11 +287,11 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
           wire(resetSignal, BytesSent.RESET)
 
           #Listen to ACKs via rising edge of DTR register.
-          #Can't just compute rising edge as ~DTRbuffer & printf.dtr due to
+          #Can't just compute rising edge as ~DTRbuffer & printf.DTR due to
           #glitches! The rising edge is only correctly detected if we buffer
           #again.
           DTRBuffer = DFF()
-          DTRBuffer(printf.dtr)
+          DTRBuffer(printf.DTR)
           DTRBuffer_lag = DFF()
           DTRBuffer_lag(DTRBuffer)
           DTRRising = LUT2(~I0 & I1)(DTRBuffer_lag, DTRBuffer)
@@ -338,5 +329,3 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
 
 def IOPrintf(lengths, ce=False, r=False, s=False, **kwargs):
     return DefineIOPrintf(lengths, ce, r, s)(**kwargs)
-
-    

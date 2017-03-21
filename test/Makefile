@@ -42,7 +42,7 @@ icepack app.txt app.bin
 $(APPS_IOBINARIES) : ../fastio/iocc/**
 
 $(APPS_IOBINARIES) : $(BINDIR)/%/app : $(BINDIR)/%/app.pcf
-	iocc data.json $(BINDIR)/$*/app
+	iocc $(BINDIR)/$*/app.iospec.json $(BINDIR)/$*/app
 	$(CC) -o $@ $(LDFLAGS) $(LDLIBS) $(BINDIR)/$*/app-io.c $(CFLAGS)
 
 all: $(APPS_BINFILES) $(APPS_IOBINARIES)
