@@ -1,2 +1,0 @@
-There should be an overarching I/O code, with some specific ios such as the
-io_display used to display pixel data generated on the FPGA.

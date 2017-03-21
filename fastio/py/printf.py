@@ -20,7 +20,8 @@ f = open('data.json', 'w')
 def REGs(n):
     return [Register(8, ce=True) for i in range(n)]
 
-def pad_zeros(init, n):
+#Pads init[0] to the end of init until init has length == n
+def pad_garbage(init, n):
     return array(*[init[i] if i < len(init) else init[0] for i in range(n)])
 
 def _PrintIOName(name, n):
@@ -29,7 +30,7 @@ def _PrintIOName(name, n):
 
 def PrintIO (valid, msg, *argv):
 
-  header_bitwidth = 4
+  header_bitwidth = 8
   
   idx  = len(PrintNameCache)
   name = _PrintIOName('IOPrintf', idx)
@@ -45,7 +46,7 @@ def PrintIO (valid, msg, *argv):
 
   # ceiling length to nearest multiple of 8 and zero pad the input to the length
   PrintLenCache[idx]  = (len(PrintDataCache[idx]) + 7) >> 3
-  PrintDataCache[idx] = pad_zeros(PrintDataCache[idx], PrintLenCache[idx] * 8)
+  PrintDataCache[idx] = pad_garbage(PrintDataCache[idx], PrintLenCache[idx] * 8)
   
   if 0:
     print(PrintLenCache[idx])
@@ -55,6 +56,7 @@ def PrintIO (valid, msg, *argv):
   # dump CPU side information to JSON file - message, total packet length, header bitwidth, argument bitwidth
   json_data = {'msg' : msg, 'total_byte_len' : PrintLenCache[idx], 'header_bitwidth' : header_bitwidth, 'arg_bitwidths' : [len(arg) for arg in argv]}
   json.dump(json_data, f, indent=2)
+  f.write("\n")
   
   return 0
 
@@ -208,7 +210,7 @@ def DefineIOPrintf (lengths, ce=False, r=False, s=False):
       arg_latch = [
               RAM(
                       logn_max_len,
-                      pad_zeros(getattr(printf,"data%d"%i),(1<<logn_max_len)*8),
+                      pad_garbage(getattr(printf,"data%d"%i),(1<<logn_max_len)*8),
                       print_cnt.O,
                       should_accept
               )

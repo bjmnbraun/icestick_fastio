@@ -1,0 +1,8 @@
+- dtr -> DTR
+- "Cache" to just "Printfs" (they're not a cache)
+- Python profiling to debug compilation times?
+- Set up PrintIOConn first, and add a "compile_io" hook right before compile
+  (ideally the compile_io hook is unnecessary and automatically done by magma)
+  - This lets us have the right file path earlier so we can emit json to the
+    right file
+-  

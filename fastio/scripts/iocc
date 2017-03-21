@@ -1,0 +1,8 @@
+#!/bin/bash
+
+set -beEu -o pipefail
+
+export PYTHONPATH=$PYTHONPATH:$FASTIO_HOME/iocc/py
+
+#Just a simple wrapper script for easy command line use
+python $FASTIO_HOME/iocc/py/iocc.py $FASTIO_HOME/iocc/templates $1 $2
