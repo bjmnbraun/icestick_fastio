@@ -86,6 +86,7 @@ long pull_bits_long(bit_iter* iter, size_t nbits){
 //Printf state. We read in each printf one byte at a time.
 //Returns the number of bytes actually used. The tail end should be kept and
 //passed in with the next buffer.
+size_t bytes_printed = 0;
 int process_display_output(size_t* read, void* buffer, size_t size){
         //As we iterate, we increment buffer and decrement size_left
         *read = 0;
@@ -99,8 +100,18 @@ int process_display_output(size_t* read, void* buffer, size_t size){
                 {
                         size_t i;
                         for(i = 0; i < PIXEL_SIZE; i++){
-                                printf("%02x ", ((unsigned char*)buffer)[i]);
+                                printf("%02x", ((unsigned char*)buffer)[i]);
                         }
+
+                }
+                bytes_printed++;
+                if (bytes_printed % 64 == 0){
+                        printf("\n");
+                }
+                if (bytes_printed % (64*64) == 0){
+                        usleep(100000);
+                        printf("\n");
+                        printf("\n");
                         printf("\n");
                 }
 #endif
@@ -394,7 +405,7 @@ TimevalDiff(&progress->current.time,
                                 (progress->current.totalBytes -
                                  progress->prev.totalBytes) / timeSincePrev;
 
-                        if (progress->currentRate){
+                        if (progress->currentRate && false){
                                 printf(
                                         "Rate: %.3f\n",
                                         (progress->currentRate / (1024.0*1024.0))
